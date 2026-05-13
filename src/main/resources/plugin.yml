@@ -1,3 +1,4 @@
 name: UtilityLibCommand
 version: 1.0
 main: com.wonkglorg.utilitylib.command.Main
+folia-supported: true
