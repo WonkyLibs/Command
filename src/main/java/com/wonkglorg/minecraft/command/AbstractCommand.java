@@ -1,4 +1,4 @@
-package com.wonkglorg.utilitylib.command;
+package com.wonkglorg.minecraft.command;
 
 import com.mojang.brigadier.Message;
 import com.mojang.brigadier.arguments.ArgumentType;

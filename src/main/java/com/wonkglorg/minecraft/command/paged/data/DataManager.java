@@ -1,4 +1,4 @@
-package com.wonkglorg.utilitylib.command.paged.data;
+package com.wonkglorg.minecraft.command.paged.data;
 
 import org.bukkit.Bukkit;
 
