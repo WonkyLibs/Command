@@ -1,16 +1,22 @@
-package com.wonkglorg.utilitylib.command.paged;
+package com.wonkglorg.minecraft.command.paged;
 
+import lombok.Getter;
+import lombok.Setter;
 import net.kyori.adventure.audience.Audience;
 import net.kyori.adventure.text.Component;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
 
+@SuppressWarnings("unused")
 public abstract class ChatPagination<T>{
 	private Audience audience;
-	private List<T> entries;
+	private final List<T> entries;
+	@Setter
 	private int pageSize = 25;
+	@Getter
 	private int page = 0;
+	@Setter
 	private boolean sendHeaderAndFooterOnEmpty = true;
 	
 	protected ChatPagination(List<T> entries) {
@@ -71,7 +77,7 @@ public abstract class ChatPagination<T>{
 	protected abstract @NotNull List<Component> pageControls();
 	
 	public void setPage(int page) {
-		this.page = Math.max(0, Math.min(page, getMaxPage()));
+		this.page = Math.clamp(page, 0, getMaxPage());
 	}
 	
 	public void nextPage() {
@@ -100,15 +106,4 @@ public abstract class ChatPagination<T>{
 		return getMaxPage() + 1;
 	}
 	
-	public int getPage() {
-		return page;
-	}
-	
-	public void setSendHeaderAndFooterOnEmpty(boolean sendHeaderAndFooterOnEmpty) {
-		this.sendHeaderAndFooterOnEmpty = sendHeaderAndFooterOnEmpty;
-	}
-	
-	public void setPageSize(int pageSize) {
-		this.pageSize = pageSize;
-	}
 }

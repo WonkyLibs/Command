@@ -1,4 +1,4 @@
-package com.wonkglorg.utilitylib.command;
+package com.wonkglorg.minecraft.command;
 
 import org.bukkit.plugin.java.JavaPlugin;
 

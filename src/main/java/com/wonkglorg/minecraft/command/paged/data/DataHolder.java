@@ -1,4 +1,4 @@
-package com.wonkglorg.utilitylib.command.paged.data;
+package com.wonkglorg.minecraft.command.paged.data;
 
 
 public class DataHolder<T>{

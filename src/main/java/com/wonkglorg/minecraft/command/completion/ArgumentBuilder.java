@@ -1,11 +1,11 @@
-package com.wonkglorg.utilitylib.command.completion;
+package com.wonkglorg.minecraft.command.completion;
 
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.builder.RequiredArgumentBuilder;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
-import static com.wonkglorg.utilitylib.command.AbstractCommand.getArgument;
+import static com.wonkglorg.minecraft.command.AbstractCommand.getArgument;
 import io.papermc.paper.command.brigadier.CommandSourceStack;
 import io.papermc.paper.command.brigadier.Commands;
 import static net.kyori.adventure.text.minimessage.MiniMessage.miniMessage;

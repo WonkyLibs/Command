@@ -1,4 +1,4 @@
-package com.wonkglorg.utilitylib.command.completion;
+package com.wonkglorg.minecraft.command.completion;
 
 import java.util.Collection;
 import java.util.Set;
