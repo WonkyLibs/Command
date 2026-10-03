@@ -1,11 +1,15 @@
 package com.wonkglorg.minecraft.command.completion;
 
+import lombok.Getter;
+
 import java.util.Collection;
 import java.util.Set;
 import java.util.function.Supplier;
 
 public class Argument{
+	@Getter
 	private String argumentName;
+	@Getter
 	private boolean required;
 	private Supplier<Collection<String>> suggestions;
 	
@@ -19,14 +23,6 @@ public class Argument{
 		this.argumentName = argumentName;
 		this.required = required;
 		suggestions = Set::of;
-	}
-	
-	public String getArgumentName() {
-		return argumentName;
-	}
-	
-	public boolean isRequired() {
-		return required;
 	}
 	
 	public Collection<String> getSuggestions() {

@@ -15,6 +15,11 @@ import java.util.stream.IntStream;
 @SuppressWarnings("unused")
 public abstract class ChatPagination<T>{
 	/**
+	 * When this pagination was requested
+	 */
+	@Getter
+	protected final long requestTime;
+	/**
 	 * Function to evaluate entries based on the provided page number
 	 */
 	private final IntFunction<List<T>> entries;
@@ -73,6 +78,7 @@ public abstract class ChatPagination<T>{
 		if(pageSize <= 0){
 			throw new IllegalArgumentException("Page size must be greater than 0");
 		}
+		this.requestTime = System.currentTimeMillis();
 		this.pageSize = pageSize;
 		this.entries = entries;
 	}
