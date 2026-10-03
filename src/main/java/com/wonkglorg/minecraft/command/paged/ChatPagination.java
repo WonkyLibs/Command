@@ -1,116 +1,228 @@
 package com.wonkglorg.minecraft.command.paged;
 
 import lombok.Getter;
-import lombok.Setter;
 import net.kyori.adventure.audience.Audience;
 import net.kyori.adventure.text.Component;
 import org.jetbrains.annotations.NotNull;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.IntFunction;
-import java.util.stream.IntStream;
 
 @SuppressWarnings("unused")
 public abstract class ChatPagination<T>{
+	
 	/**
-	 * When this pagination was requested
+	 * When this pagination was requested.
 	 */
 	@Getter
 	protected final long requestTime;
+	
 	/**
-	 * Function to evaluate entries based on the provided page number
+	 * Function to evaluate entries based on the provided page number.
 	 */
-	private final IntFunction<List<T>> entries;
+	private final IntFunction<CompletableFuture<PageResult<T>>> entries;
+	
 	/**
-	 * If caching is enabled the entries will be stored in the cache instead of being recomputed
+	 * Cached page requests, including requests that are still loading.
 	 */
-	private final Map<Integer, List<T>> cachedEntries = new ConcurrentHashMap<>();
+	private final Map<Integer, CompletableFuture<PageResult<T>>> cachedEntries = new ConcurrentHashMap<>();
+	
 	/**
-	 * The maximum entries being displayed on one page
+	 * The currently loaded page result.
+	 */
+	private volatile PageResult<T> currentPage;
+	
+	/**
+	 * The page number associated with currentPage.
+	 */
+	private volatile int loadedPage = -1;
+	
+	/**
+	 * The maximum entries being displayed on one page.
 	 */
 	private final int pageSize;
-	/**
-	 * Current page the pagination is on
-	 */
-	@Getter
-	private int page = 0;
 	
 	/**
-	 * If resulting entries should be cached once computed
+	 * Current requested page.
 	 */
 	@Getter
-	@Setter
-	private boolean cacheEntries = true;
+	private volatile int page = 0;
 	
 	/**
-	 * @param pageSize the page size of each page to show
-	 * @param entries all entries contained within this pagination
+	 * Whether resulting entries should be cached.
 	 */
+	@Getter
+	private boolean isCached = true;
+	
+	/**
+	 * Whether the pagination is currently loading page data.
+	 */
+	@Getter
+	private volatile boolean loadingPageData = false;
+	
+	/**
+	 * Identifies the most recent page-loading request.
+	 * Prevents older requests from overwriting newer ones.
+	 */
+	private final AtomicLong loadGeneration = new AtomicLong();
+	
 	protected ChatPagination(int pageSize, List<T> entries) {
-		this(pageSize, page -> {
-			int from = page * pageSize;
-			int to = Math.min(from + pageSize, entries.size());
-			return entries.subList(from, to);
-		});
+		this(pageSize, entries, true);
 	}
 	
-	/**
-	 * @param pageSize the page size of each page to show
-	 * @param entries all entries contained within this pagination
-	 * @param cacheEntries if entries should be cached right away
-	 */
 	protected ChatPagination(int pageSize, List<T> entries, boolean cacheEntries) {
-		this(pageSize, entries);
-		this.cacheEntries = cacheEntries;
+		this(pageSize, providedPage -> {
+			int from = Math.min(providedPage * pageSize, entries.size());
+			int to = Math.min(from + pageSize, entries.size());
+			
+			return CompletableFuture.completedFuture(new PageResult<>(entries.subList(from, to), to < entries.size()));
+		});
+		
+		this.isCached = cacheEntries;
+		
 		if(cacheEntries){
-			IntStream.range(0, Math.ceilDiv(entries.size(), pageSize)).forEach(i -> cachedEntries.put(i, this.entries.apply(i)));
+			int pageCount = Math.ceilDiv(entries.size(), pageSize);
+			
+			for(int i = 0; i < pageCount; i++){
+				int from = i * pageSize;
+				int to = Math.min(from + pageSize, entries.size());
+				
+				cachedEntries.put(i, CompletableFuture.completedFuture(new PageResult<>(entries.subList(from, to), to < entries.size())));
+			}
 		}
 	}
 	
-	/**
-	 * @param pageSize the page size of each page to show
-	 * @param entries a lazy populated result of the entries to show on a specific page
-	 * @param totalPages the precomputed maximum known page size, a value below 0 means unknown maximum page size
-	 */
-	protected ChatPagination(int pageSize, IntFunction<List<T>> entries) {
+	protected ChatPagination(int pageSize, IntFunction<CompletableFuture<PageResult<T>>> entries) {
 		if(pageSize <= 0){
 			throw new IllegalArgumentException("Page size must be greater than 0");
 		}
+		
 		this.requestTime = System.currentTimeMillis();
 		this.pageSize = pageSize;
 		this.entries = entries;
 	}
 	
 	/**
-	 * Sends the current selected page to the specified audience
+	 * Changes the requested page and loads its data.
+	 */
+	public CompletableFuture<Void> setPage(int page) {
+		this.page = Math.max(0, page);
+		return loadPage();
+	}
+	
+	/**
+	 * Changes to the next page if one is available.
+	 */
+	public CompletableFuture<Void> nextPage() {
+		if(!hasNextPage()){
+			return CompletableFuture.completedFuture(null);
+		}
+		
+		return setPage(page + 1);
+	}
+	
+	/**
+	 * Changes to the previous page.
+	 */
+	public CompletableFuture<Void> prevPage() {
+		return setPage(page - 1);
+	}
+	
+	/**
+	 * Loads the currently requested page.
+	 */
+	private CompletableFuture<Void> loadPage() {
+		int requestedPage = page;
+		long generation = loadGeneration.incrementAndGet();
+		
+		loadingPageData = true;
+		
+		return getEntries(requestedPage).thenAccept(result -> {
+			if(loadGeneration.get() != generation){
+				return;
+			}
+			
+			currentPage = result;
+			loadedPage = requestedPage;
+			
+		}).whenComplete((result, error) -> {
+			if(loadGeneration.get() == generation){
+				loadingPageData = false;
+			}
+		});
+	}
+	
+	/**
+	 * Retrieves a page, using the cache if enabled.
+	 */
+	private CompletableFuture<PageResult<T>> getEntries(int requestedPage) {
+		if(!isCached){
+			return entries.apply(requestedPage);
+		}
+		
+		CompletableFuture<PageResult<T>> cached = cachedEntries.get(requestedPage);
+		
+		if(cached != null){
+			return cached;
+		}
+		
+		// Insert a promise first to prevent duplicate requests.
+		CompletableFuture<PageResult<T>> promise = new CompletableFuture<>();
+		
+		cached = cachedEntries.putIfAbsent(requestedPage, promise);
+		
+		if(cached != null){
+			return cached;
+		}
+		
+		try{
+			entries.apply(requestedPage).whenComplete((result, error) -> {
+				if(error != null){
+					cachedEntries.remove(requestedPage, promise);
+					promise.completeExceptionally(error);
+				} else {
+					promise.complete(result);
+				}
+			});
+		} catch(Throwable error){
+			cachedEntries.remove(requestedPage, promise);
+			promise.completeExceptionally(error);
+		}
+		
+		return promise;
+	}
+	
+	/**
+	 * Sends the currently loaded page to the specified audience.
 	 */
 	public void sendToAudience(Audience audience) {
-		List<T> pageResults = getEntries(page);
-		List<Component> header = pageResults.isEmpty() ? constructHeaderEmpty() : constructHeader();
-		if(!header.isEmpty()){
-			header.forEach(audience::sendMessage);
+		PageResult<T> result = currentPage;
+		int displayedPage = page;
+		
+		if(loadingPageData || result == null || loadedPage != displayedPage){
+			return;
 		}
 		
-		int entryCount = page * pageSize;
-		for(var entry : pageResults){
-			List<Component> message = constructEntry(entryCount++, entry);
-			if(message.isEmpty()){
-				continue;
-			}
-			message.forEach(audience::sendMessage);
+		List<Component> header = result.hasEntries() ? constructHeader() : constructHeaderEmpty();
+		
+		header.forEach(audience::sendMessage);
+		
+		int entryCount = displayedPage * pageSize;
+		
+		for(T entry : result.entries()){
+			List<Component> messages = constructEntry(entryCount++, entry);
+			messages.forEach(audience::sendMessage);
 		}
 		
-		List<Component> footer = pageResults.isEmpty() ? constructFooterEmpty() : constructFooter();
-		if(!footer.isEmpty()){
-			footer.forEach(audience::sendMessage);
-		}
+		List<Component> footer = result.hasEntries() ? constructFooter() : constructFooterEmpty();
 		
-		List<Component> pageControls = pageControls();
-		if(!pageControls.isEmpty()){
-			pageControls.forEach(audience::sendMessage);
-		}
+		footer.forEach(audience::sendMessage);
+		
+		pageControls().forEach(audience::sendMessage);
 	}
 	
 	/**
@@ -147,49 +259,14 @@ public abstract class ChatPagination<T>{
 	protected abstract @NotNull List<Component> pageControls();
 	
 	/**
-	 * Retrieves a page, using the cache if enabled.
-	 */
-	private List<T> getEntries(int page) {
-		if(cacheEntries){
-			return cachedEntries.computeIfAbsent(page, p -> List.copyOf(entries.apply(p)));
-		}
-		
-		return entries.apply(page);
-	}
-	
-	public void setPage(int page) {
-		if(page < 0){
-			this.page = 0;
-			return;
-		}
-		
-		if(!getEntries(page).isEmpty()){
-			this.page = page;
-		}
-	}
-	
-	public void nextPage() {
-		if(hasNextPage()){
-			page++;
-		}
-	}
-	
-	/**
-	 * swaps to the previous page
-	 */
-	public void prevPage() {
-		page = Math.max(page - 1, 0);
-	}
-	
-	/**
-	 * If a next page is available to be loaded
+	 * Whether a next page is available.
 	 */
 	public boolean hasNextPage() {
-		return !getEntries(page + 1).isEmpty();
+		return currentPage != null && loadedPage == page && !loadingPageData && currentPage.hasNext();
 	}
 	
 	/**
-	 * @return returns the 1 indexed page for user display
+	 * Returns the 1-indexed page for user display.
 	 */
 	public int getPageDisplay() {
 		return page + 1;
