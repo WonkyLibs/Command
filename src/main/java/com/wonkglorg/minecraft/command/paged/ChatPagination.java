@@ -13,7 +13,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.BiFunction;
 
 @SuppressWarnings("unused")
-public abstract class ChatPagination<T>{
+public abstract class ChatPagination<T, U extends ChatPagination<T, U>>{
 	
 	/**
 	 * When this pagination was requested.
@@ -24,7 +24,7 @@ public abstract class ChatPagination<T>{
 	/**
 	 * Function to evaluate entries based on the provided page number.
 	 */
-	private final BiFunction<ChatPagination<T>, Integer, CompletableFuture<PageResult<T>>> entries;
+	private final BiFunction<U, Integer, CompletableFuture<PageResult<T>>> entries;
 	
 	/**
 	 * Cached page requests, including requests that are still loading.
@@ -96,7 +96,7 @@ public abstract class ChatPagination<T>{
 		}
 	}
 	
-	protected ChatPagination(int pageSize, BiFunction<ChatPagination<T>, Integer, CompletableFuture<PageResult<T>>> entries) {
+	protected ChatPagination(int pageSize, BiFunction<U, Integer, CompletableFuture<PageResult<T>>> entries) {
 		if(pageSize <= 0){
 			throw new IllegalArgumentException("Page size must be greater than 0");
 		}
@@ -161,7 +161,7 @@ public abstract class ChatPagination<T>{
 	 */
 	private CompletableFuture<PageResult<T>> getEntries(int requestedPage) {
 		if(!isCached){
-			return entries.apply(this, requestedPage);
+			return entries.apply((U) this, requestedPage);
 		}
 		
 		CompletableFuture<PageResult<T>> cached = cachedEntries.get(requestedPage);
@@ -180,7 +180,7 @@ public abstract class ChatPagination<T>{
 		}
 		
 		try{
-			entries.apply(this, requestedPage).whenComplete((result, error) -> {
+			entries.apply((U) this, requestedPage).whenComplete((result, error) -> {
 				if(error != null){
 					cachedEntries.remove(requestedPage, promise);
 					promise.completeExceptionally(error);
