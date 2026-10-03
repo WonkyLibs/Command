@@ -10,7 +10,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.function.IntFunction;
+import java.util.function.BiFunction;
 
 @SuppressWarnings("unused")
 public abstract class ChatPagination<T>{
@@ -24,7 +24,7 @@ public abstract class ChatPagination<T>{
 	/**
 	 * Function to evaluate entries based on the provided page number.
 	 */
-	private final IntFunction<CompletableFuture<PageResult<T>>> entries;
+	private final BiFunction<ChatPagination<T>, Integer, CompletableFuture<PageResult<T>>> entries;
 	
 	/**
 	 * Cached page requests, including requests that are still loading.
@@ -75,12 +75,12 @@ public abstract class ChatPagination<T>{
 	}
 	
 	protected ChatPagination(int pageSize, List<T> entries, boolean cacheEntries) {
-		this(pageSize, providedPage -> {
+		this(pageSize, ((pagination, providedPage) -> {
 			int from = Math.min(providedPage * pageSize, entries.size());
 			int to = Math.min(from + pageSize, entries.size());
 			
 			return CompletableFuture.completedFuture(new PageResult<>(entries.subList(from, to), to < entries.size()));
-		});
+		}));
 		
 		this.isCached = cacheEntries;
 		
@@ -96,7 +96,7 @@ public abstract class ChatPagination<T>{
 		}
 	}
 	
-	protected ChatPagination(int pageSize, IntFunction<CompletableFuture<PageResult<T>>> entries) {
+	protected ChatPagination(int pageSize, BiFunction<ChatPagination<T>, Integer, CompletableFuture<PageResult<T>>> entries) {
 		if(pageSize <= 0){
 			throw new IllegalArgumentException("Page size must be greater than 0");
 		}
@@ -161,7 +161,7 @@ public abstract class ChatPagination<T>{
 	 */
 	private CompletableFuture<PageResult<T>> getEntries(int requestedPage) {
 		if(!isCached){
-			return entries.apply(requestedPage);
+			return entries.apply(this, requestedPage);
 		}
 		
 		CompletableFuture<PageResult<T>> cached = cachedEntries.get(requestedPage);
@@ -180,7 +180,7 @@ public abstract class ChatPagination<T>{
 		}
 		
 		try{
-			entries.apply(requestedPage).whenComplete((result, error) -> {
+			entries.apply(this, requestedPage).whenComplete((result, error) -> {
 				if(error != null){
 					cachedEntries.remove(requestedPage, promise);
 					promise.completeExceptionally(error);
